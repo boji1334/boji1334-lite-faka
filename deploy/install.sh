@@ -2,6 +2,7 @@
 set -euo pipefail
 
 REPO_URL="${REPO_URL:-https://github.com/boji1334/boji1334-lite-faka.git}"
+TARBALL_URL="${TARBALL_URL:-https://codeload.github.com/boji1334/boji1334-lite-faka/tar.gz/refs/heads/main}"
 APP_DIR="${APP_DIR:-/opt/boji1334-lite-faka}"
 APP_USER="${APP_USER:-litefaka}"
 SERVICE_NAME="${SERVICE_NAME:-boji1334-lite-faka}"
@@ -54,7 +55,7 @@ PY
 }
 
 prompt_default BASE_URL "Public site URL" "http://YOUR_DOMAIN:${APP_PORT}"
-prompt_default SITE_NAME "Site name" "轻量发卡网"
+prompt_default SITE_NAME "Site name" "Lite Faka"
 prompt_default ADMIN_USER "Admin username" "admin"
 prompt_default ADMIN_PASS "Admin password" "$(random_secret)" "secret"
 SECRET_KEY="${SECRET_KEY:-$(random_secret)}"
@@ -66,12 +67,12 @@ if ss -ltn "( sport = :${APP_PORT} )" 2>/dev/null | grep -q ":${APP_PORT}"; then
   fi
 fi
 
-if ! need_cmd python3 || ! need_cmd git; then
+if ! need_cmd python3 || ! need_cmd git || ! need_cmd tar || ! need_cmd curl; then
   if need_cmd apt-get; then
     apt-get update
-    apt-get install -y python3 git ca-certificates
+    apt-get install -y python3 git ca-certificates curl tar
   else
-    echo "python3 and git are required. Please install them first."
+    echo "python3, git, curl, and tar are required. Please install them first."
     exit 1
   fi
 fi
@@ -80,12 +81,46 @@ if ! id "$APP_USER" >/dev/null 2>&1; then
   useradd --system --home "$APP_DIR" --shell /usr/sbin/nologin "$APP_USER"
 fi
 
+sync_repo_files() {
+  local source_dir="$1"
+  mkdir -p "$APP_DIR"
+  (cd "$source_dir" && tar --exclude='./.git' --exclude='./data' -cf - .) | (cd "$APP_DIR" && tar -xf -)
+}
+
+install_from_git() {
+  if [ -d "$APP_DIR/.git" ]; then
+    git -C "$APP_DIR" -c http.version=HTTP/1.1 fetch --depth=1 origin main || return 1
+    git -C "$APP_DIR" reset --hard origin/main || return 1
+  else
+    local clone_dir
+    clone_dir="$(mktemp -d)"
+    git -c http.version=HTTP/1.1 clone --depth=1 "$REPO_URL" "$clone_dir" || {
+      rm -rf "$clone_dir"
+      return 1
+    }
+    sync_repo_files "$clone_dir" || {
+      rm -rf "$clone_dir"
+      return 1
+    }
+    rm -rf "$clone_dir"
+  fi
+}
+
+install_from_tarball() {
+  local tmp_dir archive
+  tmp_dir="$(mktemp -d)"
+  archive="${tmp_dir}/repo.tar.gz"
+  curl -fL --retry 3 --connect-timeout 15 -o "$archive" "$TARBALL_URL"
+  tar -xzf "$archive" -C "$tmp_dir" --strip-components=1
+  rm -rf "$APP_DIR/.git"
+  sync_repo_files "$tmp_dir"
+  rm -rf "$tmp_dir"
+}
+
 mkdir -p "$APP_DIR"
-if [ -d "$APP_DIR/.git" ]; then
-  git -C "$APP_DIR" fetch --depth=1 origin main
-  git -C "$APP_DIR" reset --hard origin/main
-else
-  git clone --depth=1 "$REPO_URL" "$APP_DIR"
+if ! install_from_git; then
+  echo "Git clone/fetch failed. Falling back to GitHub tarball download..."
+  install_from_tarball
 fi
 
 mkdir -p "$APP_DIR/data"

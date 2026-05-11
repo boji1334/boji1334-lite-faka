@@ -118,10 +118,12 @@ install_from_tarball() {
 }
 
 mkdir -p "$APP_DIR"
+chmod 755 "$APP_DIR"
 if ! install_from_git; then
   echo "Git clone/fetch failed. Falling back to GitHub tarball download..."
   install_from_tarball
 fi
+chmod 755 "$APP_DIR"
 
 mkdir -p "$APP_DIR/data"
 chown -R "$APP_USER:$APP_USER" "$APP_DIR/data"

@@ -770,6 +770,17 @@ class App(BaseHTTPRequestHandler):
         except Exception as exc:
             self.send_html("出错了", f"<div class='panel'><h1>出错了</h1><p>{e(exc)}</p></div>", 500)
 
+    def do_HEAD(self) -> None:
+        path = urllib.parse.urlparse(self.path).path
+        if path == "/health":
+            self.send_response(200)
+            self.send_header("Content-Type", "text/plain; charset=utf-8")
+            self.end_headers()
+            return
+        self.send_response(200)
+        self.send_header("Content-Type", "text/html; charset=utf-8")
+        self.end_headers()
+
     def do_POST(self) -> None:
         path = urllib.parse.urlparse(self.path).path
         try:
